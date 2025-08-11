@@ -1,0 +1,51 @@
+<h1>
+  {{title}}
+  <button class="add-btn" (click)="showAddForm()" title="Add Event">
+    <span class="add-icon">➕</span> Add Event
+  </button>
+</h1>
+
+<div class="event-list">
+  <hr>
+  <div
+    cdkDropList
+    (cdkDropListDropped)="drop($event)"
+    class="event-drop-list"
+  >
+    <div
+      *ngFor="let event of events; let i = index"
+      class="event-row" cdkDrag
+    >
+      <span class="event-col event-edit">
+        <button (click)="editEvent(i)" title="Edit Event" class="edit-btn">✏️</button>
+        <!-- <span cdkDragHandle style="cursor: grab;">⠿</span> Uncomment to use grab handle for reordering instead of clicking anywhere on the item-->
+      </span>
+      <span class="event-col event-title">{{ event.title }}</span>
+      <span class="event-col event-date">{{ event.date | date:'mediumDate' }}</span>
+      <ng-container *ngIf="eventDifferences[i] as diff">
+        <span [innerHTML]="formatDiffHtml(diff)"></span>
+      </ng-container>
+    </div>
+  </div>
+</div>
+
+<hr>
+<!-- edit form -->
+<div *ngIf="showEditForm" class="edit-overlay">
+  <div class="add-edit-form">
+    <h3>{{ editIndex === null ? 'Add' : 'Edit' }} Event</h3>
+    <form (ngSubmit)="onSubmit()" #eventForm="ngForm">
+      <input type="text" placeholder="Title" [(ngModel)]="formEvent.title" name="title" required />
+      <div class="form-row-inline">
+        <input type="date" [(ngModel)]="formEvent.date" name="date" required />
+        <select [(ngModel)]="formEvent.countDirection" name="countDirection">
+          <option [value]="eventDirection.Up">Up</option>
+          <option [value]="eventDirection.Down">Down</option>
+        </select>
+        <button type="submit">{{ editIndex === null ? 'Add' : 'Update' }}</button>
+        <button type="button" (click)="cancelEdit()">Cancel</button>
+        <button *ngIf="editIndex != null" type="button" (click)="deleteItem()">Delete</button>
+      </div>
+    </form>
+  </div>
+</div>
