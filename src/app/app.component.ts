@@ -34,18 +34,17 @@ export class AppComponent implements OnInit, OnDestroy {
 
   public showEditForm: boolean = false; // Control visibility of the edit form
 
-  // TODO
-  // Add a way to filter events by date or title
-  // Add a way to sort events by date or title
-
-
   ngOnInit() {
-    this.loadSavedEvents();
+    try {
+      this.loadSavedEvents();
 
-    this.updateEventDifferences();
-    this.startTimer();
+      this.updateEventDifferences();
+      this.startTimer();
 
-    document.addEventListener('visibilitychange', this.visibilityHandler);
+      document.addEventListener('visibilitychange', this.visibilityHandler);
+    } catch (error) {
+      console.error('Error during initialization:', error);
+    }
   }
 
   ngOnDestroy() {
