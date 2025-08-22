@@ -7,7 +7,7 @@
     "build": "ng build",
     "watch": "ng build --watch --configuration development",
     "test": "ng test",
-    "build:github-pages": "ng build --output-path docs --base-href /Dice-Stats/ && node fix-publish.js"
+    "build:github-pages": "ng build --output-path docs --base-href /event-tracker/ && node fix-publish.js"
   },
   "prettier": {
     "overrides": [
