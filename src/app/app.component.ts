@@ -15,7 +15,7 @@ import { timer } from 'rxjs';
 })
 export class AppComponent implements OnInit, OnDestroy {
   /* Application title */
-  public title: string = 'Event Tracker';
+  public title: string = 'Event Timer';
   /* List of events */
   public events: EventModel[] = [];
   /* Key for local storage */
