@@ -413,7 +413,7 @@ export class AppComponent implements OnInit, OnDestroy {
     if (this.events.length === 0) {
       // Add a default event if no events are found
       this.events.push({
-        title: 'Started using Event Tracker',
+        title: `Started using ${this.title}`,
         date: new Date(),
         visible: true
       });
