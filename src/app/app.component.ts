@@ -1,8 +1,10 @@
 import { Component, OnInit, OnDestroy } from '@angular/core';
 import { CommonModule, DatePipe } from '@angular/common';
-import { FormsModule } from '@angular/forms'; // <-- Add this import
+import { FormsModule } from '@angular/forms';
 import { EventDirection, EventModel } from './models/event.model';
 import { DragDropModule, CdkDragDrop, moveItemInArray } from '@angular/cdk/drag-drop';
+import { ChangeDetectorRef } from '@angular/core';
+import { timer } from 'rxjs'; 
 
 @Component({
   standalone: true,
@@ -12,36 +14,38 @@ import { DragDropModule, CdkDragDrop, moveItemInArray } from '@angular/cdk/drag-
   styleUrls: ['./app.component.css'],
 })
 export class AppComponent implements OnInit, OnDestroy {
+  /* Application title */
   public title: string = 'Event Tracker';
+  /* List of events */
   public events: EventModel[] = [];
-
+  /* Key for local storage */
   private storageKey: string = 'event-tracker-events';
-
+  /* initial timer to sync with 10 past midnight */
   private timerId: any;
+  /* timer to update every 24 hours after initial 'sync' timer */
   private hourlyIntervalId: any;
-  private lastUpdateDate: string | null = null;
-
+  /* list of 'date differences' for UI Display */
   public eventDifferences: { [key: number]: string } = {};
-
+  /* add/edit form model */
   public formEvent: EventModel = {
     title: '',
     date: new Date(),
-    countDirection: EventDirection.Up,
     visible: true
   };
+  /* index of event being edited, null if adding new */
   public editIndex: number | null = null;
-  public eventDirection = EventDirection;
+  /* bool to show/hide the add/edit form */
+  public showEditForm: boolean = false;
 
-  public showEditForm: boolean = false; // Control visibility of the edit form
+  //#region Initialization and Cleanup
+
+  constructor(private cdr: ChangeDetectorRef) {}
 
   ngOnInit() {
     try {
-      this.loadSavedEvents();
-
+      this.loadEvents();
       this.updateEventDifferences();
       this.startTimer();
-
-      document.addEventListener('visibilitychange', this.visibilityHandler);
     } catch (error) {
       console.error('Error during initialization:', error);
     }
@@ -49,43 +53,44 @@ export class AppComponent implements OnInit, OnDestroy {
 
   ngOnDestroy() {
     this.stopTimer();
-    document.removeEventListener('visibilitychange', this.visibilityHandler);
+    document.removeEventListener('visibilitychange', this.docEventHandler);
   }
 
-  public drop(event: CdkDragDrop<EventModel[]>) {
-    console.log('Drop event:', event);
-    moveItemInArray(this.events, event.previousIndex, event.currentIndex);
-    this.saveEvents(); // Save new order if you persist events
-    this.updateEventDifferences();
-  }
+  //#endregion
+  //#region Timer Logic
 
-  private visibilityHandler = () => {
-    if (document.hidden) {
-      this.stopTimer();
-    } else {
-      this.updateEventDifferences();
-      this.startTimer();
-    }
-  };
-
+  /**
+   * Start the timer to update event differences at 10 past midnight and every 24 hours thereafter
+   * This ensures the event differences are always up-to-date
+   */
   private startTimer() {
+    // Stop any existing timers before starting a new one
     this.stopTimer();
-
-    // Calculate ms until the next hour
+    // perform all calculations using the same 'now' date
     const now = new Date();
-    const msUntilNextHour =
-      (60 - now.getMinutes()) * 60 * 1000 -
-      now.getSeconds() * 1000 -
-      now.getMilliseconds();
 
-    // First update at the top of the next hour
-    this.timerId = setTimeout(() => {
-      this.checkAndUpdate();
-      // Then update every hour
-      this.hourlyIntervalId = setInterval(() => this.checkAndUpdate(), 60 * 60 * 1000);
-    }, msUntilNextHour);
+    //  determine how long it is until midnight...
+    //    > midnight starts the day @ 00:00, so the next midnight will be at the start of tomorrow :)
+    var nextMidnight = new Date(now.getFullYear(), now.getMonth(), now.getDate() + 1, 0, 0, 0, 0);
+    var msUntilMidnight = nextMidnight.getTime() - now.getTime(); // get the millisecond difference (ms between now and midnight)
+    //  adjust time to be 10 minutes past midnight, to avoid edge cases
+    msUntilMidnight += 10 * 60 * 1000; // 10 minutes in ms
+    
+    // set up the timers...
+    //   > First, set a timer to update tonight @ 10 minutes past midnight
+    this.timerId = timer(msUntilMidnight).subscribe(() => {
+      this.updateEventDifferences();
+      // > After that, set a timer to update every 24 hours (each day at 10 past midnight)
+      this.hourlyIntervalId = timer(24 * 60 * 60 * 1000).subscribe(() => {
+        this.updateEventDifferences();
+      });
+    });
   }
 
+  /**
+   * Stop the timer and clear any existing intervals
+   * This is called on component destruction to prevent memory leaks
+   */
   private stopTimer() {
     if (this.timerId) {
       clearInterval(this.timerId);
@@ -97,33 +102,39 @@ export class AppComponent implements OnInit, OnDestroy {
     }
   }
 
-  private checkAndUpdate() {
-    const now = new Date();
-    const todayStr = now.toISOString().substring(0, 10);
-    if (this.lastUpdateDate !== todayStr) {
-      this.lastUpdateDate = todayStr;
-      this.updateEventDifferences();
-    } else {
-      // Still update hourly for hour-based events
-      this.updateEventDifferences();
-    }
-  }
+  //#endregion
+  //#region UI Display Logic
 
+  /**
+   * Update the eventDifferences list with the current differences for each event (days until/ago)
+   * This is called on initialization and every 24 hours thereafter
+   */
   private updateEventDifferences() {
     const now = new Date();
+    // console.log('Updating event differences at', now.toLocaleString());
     this.eventDifferences = {};
+
     this.events.forEach((event, idx) => {
-      this.eventDifferences[idx] = this.formatDifference(now, new Date(event.date), event.countDirection);
+      this.eventDifferences[idx] = this.formatDifference(now, new Date(event.date));
+      // console.log(`Event: ${event.title}, Date: ${new Date(event.date).toLocaleDateString()}, Difference: ${this.eventDifferences[idx]}`);
     });
-    // Update lastUpdateDate here as well
-    this.lastUpdateDate = now.toISOString().substring(0, 10);
+    
+    this.cdr.detectChanges(); // forces UI update
   }
 
-  private formatDifference(now: Date, eventDate: Date, direction: EventDirection): string {
+  /**
+   * Format the difference between now and the event date into a human-readable string
+   * @param now Current date
+   * @param eventDate The event date to compare against
+   * @returns Formatted string showing the difference
+   */
+  private formatDifference(now: Date, eventDate: Date): string {
     let fromDate: Date, toDate: Date;
     let suffix: string;
 
-    if (direction === EventDirection.Down) {
+    // Determine 'count direction' based on event date : past = counting Up (days since then), future = counting Down (days until then))
+    let direction = (eventDate > now) ? EventDirection.Future : EventDirection.Past;
+    if (direction === EventDirection.Future) {
       fromDate = now;
       toDate = eventDate;
       suffix = 'left';
@@ -133,27 +144,30 @@ export class AppComponent implements OnInit, OnDestroy {
       suffix = 'ago';
     }
 
-    let years = toDate.getFullYear() - fromDate.getFullYear();
-    let months = toDate.getMonth() - fromDate.getMonth();
-    let days = toDate.getDate() - fromDate.getDate();
+    var { years, months, days } = this.calculateDateDifference(fromDate, toDate);
 
-    if (days < 0) {
-      months -= 1;
-      // Get days in previous month
-      const prevMonth = new Date(toDate.getFullYear(), toDate.getMonth(), 0);
-      days += prevMonth.getDate();
-    }
-    if (months < 0) {
-      years -= 1;
-      months += 12;
-    }
+    // format output
+    let result = this.formatDateOutput(years, months, days, suffix);
+    //  append 'next occurrence' if counting Up (past dates)
+    result += this.formatNextOccurrence(direction, now, eventDate);
 
-    let result = this.formatDateOutput(years, months, days) + ` ${suffix}`;
+    return result;
+  }
 
-    // Next occurrence for Up direction (anniversary/birthday)
-    if (direction === EventDirection.Up) {
+  /**
+   * For 'past' dates, calculate the Next occurrence (anniversary/birthday)
+   * @param direction The direction of the event (Past or Future)
+   * @param now current date
+   * @param eventDate The event date to compare against
+   * @returns  Formatted string showing how long until the next occurrence, or empty string if not applicable
+   */
+  private formatNextOccurrence(direction: EventDirection, now: Date, eventDate: Date): string {
+    if (direction === EventDirection.Past) {
+      // Determine the next occurrence of the event date (either later this year or next year))
+      //    First, check if the next occurrence is later this year
       let next = new Date(now.getFullYear(), eventDate.getMonth(), eventDate.getDate());
       if (next < now) {
+        //  Else, the next occurrence is next year
         next.setFullYear(next.getFullYear() + 1);
       }
       // Special case for Feb 29
@@ -162,43 +176,126 @@ export class AppComponent implements OnInit, OnDestroy {
           next.setFullYear(next.getFullYear() + 1);
         }
       }
-      // Calculate months/days until next
-      let nYears = next.getFullYear() - now.getFullYear();
-      let nMonths = next.getMonth() - now.getMonth();
-      let nDays = next.getDate() - now.getDate();
-      if (nDays < 0) {
-        nMonths -= 1;
-        const prevMonth = new Date(next.getFullYear(), next.getMonth(), 0);
-        nDays += prevMonth.getDate();
-      }
-      if (nMonths < 0) {
-        nYears -= 1;
-        nMonths += 12;
-      }
+
+      const { years: nYears, months: nMonths, days: nDays } = this.calculateDateDifference(now, next);
+
+      // format output
       let monthsDaysStr = '';
       if (nMonths > 0) monthsDaysStr += `${nMonths} month${nMonths !== 1 ? 's' : ''}`;
       if (nDays > 0) {
         if (monthsDaysStr) monthsDaysStr += ' ';
         monthsDaysStr += `${nDays} day${nDays !== 1 ? 's' : ''}`;
       }
-      if (!monthsDaysStr) monthsDaysStr = 'Today';
-      result += ` | next: ${monthsDaysStr}`;
+      
+      if (!monthsDaysStr) return '';    //  today, so display nothing
+      return ` | next: ${monthsDaysStr}`;
     }
-
-    return result;
+    return '';
   }
 
-  private formatDateOutput(years: number, months: number, days: number): string {
+  /**
+   * Calculate the exact difference between two dates, and return the amount of years, months, and days difference
+   * @param fromDate 
+   * @param toDate 
+   * @returns 
+   */
+  private calculateDateDifference(fromDate: Date, toDate: Date): { years: number, months: number, days: number } {
+    let nYears = toDate.getFullYear() - fromDate.getFullYear();
+    let nMonths = toDate.getMonth() - fromDate.getMonth();
+    let nDays = toDate.getDate() - fromDate.getDate();
+
+    // if we got a negative day result, then back up to the previous month
+    if (nDays < 0) {
+      nMonths -= 1;
+      const prevMonth = new Date(toDate.getFullYear(), toDate.getMonth(), 0);
+      nDays += prevMonth.getDate();
+    }
+
+    // if we got a negative month result, then back up to the previous year
+    if (nMonths < 0) {
+      nYears -= 1;
+      nMonths += 12;
+    }
+
+    return { years: nYears, months: nMonths, days: nDays };
+  }
+
+  /**
+   * Check if a given year is a leap year
+   * @param year The year to check
+   * @returns True if the year is a leap year, false otherwise
+   */
+  private isLeapYear(year: number): boolean {
+    // A year is a leap year if it is divisible by 4, except for end-of-century years, which must be divisible by 400
+    // Example: 2000 is a leap year, but 1900 is not
+    return ( 
+      year % 4 === 0 
+      && 
+      (
+        year % 100 !== 0 
+        || 
+        year % 400 === 0
+      )
+    );
+  }
+
+  /**
+   * Format the date difference output into a human-readable string
+   * @param years Number of years difference
+   * @param months Number of months difference
+   * @param days Number of days difference
+   * @returns Formatted string showing the difference 
+   */
+  private formatDateOutput(years: number, months: number, days: number, suffix: string): string {
+        // shortcut for today :)
+    if (days + months + years == 0) {
+      return `<b>< < < < < Today > > > > ></b>`;
+    }
+
     let parts: string[] = [];
     if (years > 0) parts.push(`${years} year${years !== 1 ? 's' : ''}`);
     if (months > 0) parts.push(`${months} month${months !== 1 ? 's' : ''}`);
     if (days > 0) parts.push(`${days} day${days !== 1 ? 's' : ''}`);
-    return parts.length > 0 ? parts.join(' ') : '0 days';
-  }
-  private isLeapYear(year: number): boolean {
-    return (year % 4 === 0 && (year % 100 !== 0 || year % 400 === 0));
+    return parts.length > 0 ? parts.join(' ') : '0 days' + ` ${suffix}`;
   }
 
+
+  public formatDiffHtml(diff: string): string {
+    // This regex will bold numbers (including negative numbers)
+    return diff.replace(/(\d+)/g, '<b>$1</b>');
+  }
+
+  //#endregion
+  //#region Document Events
+
+  /**
+   * Handles reordering of events in the list via drag-and-drop
+   * @param event CdkDragDrop event from drag-and-drop action
+   */
+  public drop(event: CdkDragDrop<EventModel[]>) {
+    moveItemInArray(this.events, event.previousIndex, event.currentIndex);
+    this.saveEvents(); // Save new order if you persist events
+    this.updateEventDifferences();
+  }
+
+  /**
+   * Handles document events (to update event differences)
+   */
+  private docEventHandler = () => {
+    if (!document.hidden) {
+      // console.log('Visibility change detected:', document.visibilityState);
+      // If the document is visible, update event differences and restart the timer
+      this.updateEventDifferences();
+    }
+  };
+
+  //#endregion
+  //#region CRUD Operations
+
+  /**
+   * Handles form submission for adding or editing an event
+   * Validates and processes the form data, then updates the events list accordingly
+   */
   public onSubmit() {
     // Convert date string to Date object if needed
     if (typeof this.formEvent.date === 'string') {
@@ -206,6 +303,7 @@ export class AppComponent implements OnInit, OnDestroy {
       const [year, month, day] = this.formEvent.date.split('-').map(Number);
       this.formEvent.date = new Date(year, month - 1, day);
     }
+
     if (this.editIndex === null) {
       this.addEvent({ ...this.formEvent });
     } else {
@@ -217,7 +315,11 @@ export class AppComponent implements OnInit, OnDestroy {
     this.updateEventDifferences();
   }
 
-  public editEvent(index: number) {
+  /**
+   * Prepares the form for editing an existing event by populating it with the event's data
+   * @param index Index of the event to edit
+   */
+  public startEditEvent(index: number) {
     const event = this.events[index];
     let dateString: string;
     if (typeof event.date === 'string') {
@@ -235,18 +337,36 @@ export class AppComponent implements OnInit, OnDestroy {
     this.showEditForm = true; // Show the edit form
   }
 
-  public showAddForm() {
+  /**
+   * shows the add/edit form in 'add' mode
+   */
+  public startAddEvent() {
     this.editIndex = null;
     this.formEvent = {
       title: '',
       date: new Date(),
-      countDirection: EventDirection.Up,
       visible: true
     };
     this.showEditForm = true;
   }
 
-  public deleteItem() {
+  /**
+   * Cancels the edit operation and resets the form
+   */
+  public cancelEdit() {
+    this.showEditForm = false; // Hide the edit form
+    this.formEvent = {
+      title: '',
+      date: '',
+      visible: true
+    };
+    this.editIndex = null;
+  }
+
+  /**
+   * Deletes the event currently being edited (after confirmation)
+   */
+  public deleteEvent() {
     if (this.editIndex !== null && this.editIndex >= 0 && this.editIndex < this.events.length) {
       if (confirm('Are you sure you want to delete this event?')) {
         this.events.splice(this.editIndex, 1);
@@ -257,41 +377,35 @@ export class AppComponent implements OnInit, OnDestroy {
     }
   }
 
-  public cancelEdit() {
-    this.showEditForm = false; // Hide the edit form
-    this.formEvent = {
-      title: '',
-      date: '',   //new Date(),
-      countDirection: EventDirection.Up,
-      visible: true
-    };
-    this.editIndex = null;
-  }
-
-  // need to create a component for displaying an event, then use a loop in html 
+  /**
+   * Adds the new event to the list and saves to local storage.
+   * @param event EventModel to add to the list
+   */
   public addEvent(event: EventModel) {
     this.events.push(event);
     this.saveEvents();
   }
 
-  public removeEvent(event: EventModel) {
-    this.events = this.events.filter(e => e !== event);
-    this.saveEvents();
-  }
-
+  /**
+   * Saves the current list of events to local storage, after validating them.  
+   * Invalid events (missing title, date, or visible flag) are filtered out before saving.
+   */
   private saveEvents() {
     // Validate events before saving
     this.events = this.events.filter(event =>
       event.title &&
       event.date &&
-      event.countDirection &&
       typeof event.visible === 'boolean'
     );
     // save events to local storage
     localStorage.setItem(this.storageKey, JSON.stringify(this.events));
   }
 
-  private loadSavedEvents() {
+  /**
+   * Loads the list of events from local storage.
+   * If no events are found, a default event is added.
+   */
+  private loadEvents() {
     //  load events from local storage
     const eventJson = localStorage.getItem(this.storageKey);
     this.events = eventJson ? JSON.parse(eventJson) : [];
@@ -301,16 +415,12 @@ export class AppComponent implements OnInit, OnDestroy {
       this.events.push({
         title: 'Started using Event Tracker',
         date: new Date(),
-        countDirection: EventDirection.Up,  // date is in the past, so count up (how long since started))
         visible: true
       });
       this.saveEvents();
     }
   }
 
-  public formatDiffHtml(diff: string): string {
-    // This regex will bold numbers (including negative numbers)
-    return diff.replace(/(\d+)/g, '<b>$1</b>');
-  }
+  //#endregion
 
 }
