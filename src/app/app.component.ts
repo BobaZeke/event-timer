@@ -187,7 +187,7 @@ export class AppComponent implements OnInit, OnDestroy {
         monthsDaysStr += `${nDays} day${nDays !== 1 ? 's' : ''}`;
       }
       
-      if (!monthsDaysStr) return '';    //  today, so display nothing
+      if (!monthsDaysStr) return ' <b>< < < < < Today > > > > ></b>';    //  today, so display nothing
       return ` | next: ${monthsDaysStr}`;
     }
     return '';
@@ -249,7 +249,7 @@ export class AppComponent implements OnInit, OnDestroy {
   private formatDateOutput(years: number, months: number, days: number, suffix: string): string {
         // shortcut for today :)
     if (days + months + years == 0) {
-      return `<b>< < < < < Today > > > > ></b>`;
+      return ``;
     }
 
     let parts: string[] = [];
