@@ -7,18 +7,10 @@
 
 <div class="event-list">
   <hr>
-  <div
-    cdkDropList
-    (cdkDropListDropped)="drop($event)"
-    class="event-drop-list"
-  >
-    <div
-      *ngFor="let event of events; let i = index"
-      class="event-row" cdkDrag
-    >
+  <div class="event-drop-list">
+    <div *ngFor="let event of events; let i = index" class="event-row">
       <span class="event-col event-edit">
         <button (click)="startEditEvent(i)" title="Edit Event" class="edit-btn">✏️</button>
-        <!-- <span cdkDragHandle style="cursor: grab;">⠿</span> Uncomment to use grab handle for reordering instead of clicking anywhere on the item-->
       </span>
       <span class="event-col event-title">{{ event.title }}</span>
       <span class="event-col event-date">{{ event.date | date:'mediumDate' }}</span>
@@ -29,7 +21,9 @@
   </div>
 </div>
 
+
 <hr>
+
 <!-- edit form -->
 <div *ngIf="showEditForm" class="edit-overlay">
   <div class="add-edit-form">

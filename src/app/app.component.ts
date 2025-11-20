@@ -2,14 +2,13 @@ import { Component, OnInit, OnDestroy } from '@angular/core';
 import { CommonModule, DatePipe } from '@angular/common';
 import { FormsModule } from '@angular/forms';
 import { EventDirection, EventModel } from './models/event.model';
-import { DragDropModule, CdkDragDrop, moveItemInArray } from '@angular/cdk/drag-drop';
 import { ChangeDetectorRef } from '@angular/core';
-import { timer } from 'rxjs'; 
+import { timer } from 'rxjs';
 
 @Component({
   standalone: true,
   selector: 'app-root',
-  imports: [CommonModule, DatePipe, FormsModule, DragDropModule],
+  imports: [CommonModule, DatePipe, FormsModule],
   templateUrl: './app.component.html',
   styleUrls: ['./app.component.css'],
 })
@@ -37,13 +36,14 @@ export class AppComponent implements OnInit, OnDestroy {
   /* bool to show/hide the add/edit form */
   public showEditForm: boolean = false;
 
-  //#region Initialization and Cleanup
+  //#region Initialization
 
-  constructor(private cdr: ChangeDetectorRef) {}
+  constructor(private cdr: ChangeDetectorRef) { }
 
   ngOnInit() {
     try {
       this.loadEvents();
+      this.applyAutoSort();
       this.updateEventDifferences();
       this.startTimer();
     } catch (error) {
@@ -75,7 +75,7 @@ export class AppComponent implements OnInit, OnDestroy {
     var msUntilMidnight = nextMidnight.getTime() - now.getTime(); // get the millisecond difference (ms between now and midnight)
     //  adjust time to be 10 minutes past midnight, to avoid edge cases
     msUntilMidnight += 10 * 60 * 1000; // 10 minutes in ms
-    
+
     // set up the timers...
     //   > First, set a timer to update tonight @ 10 minutes past midnight
     this.timerId = timer(msUntilMidnight).subscribe(() => {
@@ -118,8 +118,62 @@ export class AppComponent implements OnInit, OnDestroy {
       this.eventDifferences[idx] = this.formatDifference(now, new Date(event.date));
       // console.log(`Event: ${event.title}, Date: ${new Date(event.date).toLocaleDateString()}, Difference: ${this.eventDifferences[idx]}`);
     });
-    
+
+    this.applyAutoSort();
+
     this.cdr.detectChanges(); // forces UI update
+  }
+
+  /**
+ * Apply auto-sort: sort events by their next occurrence (closest first).
+ * Saves a manual-order backup when enabling autoSort so we can restore later.
+ */
+  private applyAutoSort() {
+    const now = new Date();
+    // compute next occurrence for each event and sort by that date ascending
+    const withNext = this.events.map(ev => {
+      const evDate = new Date(ev.date);
+      return { ev, next: this.getNextOccurrenceDate(evDate, now) };
+    });
+
+    withNext.sort((a, b) => a.next.getTime() - b.next.getTime());
+
+    // apply sorted order to this.events
+    this.events = withNext.map(x => x.ev);
+
+    this.saveEvents(); // save but do not update manual backup
+  }
+
+  /**
+   * Compute the next occurrence date for an event relative to 'from' (now).
+   * - If eventDate is in the future (specific future date), return that date.
+   * - If eventDate is in the past (recurring anniversary), return the next month/day occurrence.
+   * - Handles Feb 29 by finding the next leap year.
+   */
+  private getNextOccurrenceDate(eventDate: Date, from: Date): Date {
+    // Normalize incoming values
+    const ev = new Date(eventDate.getFullYear(), eventDate.getMonth(), eventDate.getDate());
+    const now = new Date(from.getFullYear(), from.getMonth(), from.getDate());
+
+    if (ev.getTime() > now.getTime()) {
+      // event has a future specific date (e.g. 2031-08-24)
+      return ev;
+    }
+
+    // recurring anniversary logic: same month/day this year or next
+    let next = new Date(now.getFullYear(), eventDate.getMonth(), eventDate.getDate());
+    if (next.getTime() <= now.getTime()) {
+      next.setFullYear(next.getFullYear() + 1);
+    }
+
+    // handle Feb 29 special case
+    if (eventDate.getMonth() === 1 && eventDate.getDate() === 29) {
+      while (!this.isLeapYear(next.getFullYear())) {
+        next.setFullYear(next.getFullYear() + 1);
+      }
+    }
+
+    return next;
   }
 
   /**
@@ -186,7 +240,7 @@ export class AppComponent implements OnInit, OnDestroy {
         if (monthsDaysStr) monthsDaysStr += ' ';
         monthsDaysStr += `${nDays} day${nDays !== 1 ? 's' : ''}`;
       }
-      
+
       if (!monthsDaysStr) return ' <b>< < < < < Today > > > > ></b>';    //  today, so display nothing
       return ` | next: ${monthsDaysStr}`;
     }
@@ -228,12 +282,12 @@ export class AppComponent implements OnInit, OnDestroy {
   private isLeapYear(year: number): boolean {
     // A year is a leap year if it is divisible by 4, except for end-of-century years, which must be divisible by 400
     // Example: 2000 is a leap year, but 1900 is not
-    return ( 
-      year % 4 === 0 
-      && 
+    return (
+      year % 4 === 0
+      &&
       (
-        year % 100 !== 0 
-        || 
+        year % 100 !== 0
+        ||
         year % 400 === 0
       )
     );
@@ -247,7 +301,7 @@ export class AppComponent implements OnInit, OnDestroy {
    * @returns Formatted string showing the difference 
    */
   private formatDateOutput(years: number, months: number, days: number, suffix: string): string {
-        // shortcut for today :)
+    // shortcut for today :)
     if (days + months + years == 0) {
       return ``;
     }
@@ -268,15 +322,6 @@ export class AppComponent implements OnInit, OnDestroy {
   //#endregion
   //#region Document Events
 
-  /**
-   * Handles reordering of events in the list via drag-and-drop
-   * @param event CdkDragDrop event from drag-and-drop action
-   */
-  public drop(event: CdkDragDrop<EventModel[]>) {
-    moveItemInArray(this.events, event.previousIndex, event.currentIndex);
-    this.saveEvents(); // Save new order if you persist events
-    this.updateEventDifferences();
-  }
 
   /**
    * Handles document events (to update event differences)

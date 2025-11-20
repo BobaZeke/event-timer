@@ -62,7 +62,7 @@ button:disabled {
   padding: 10px 0 10px 0;
   transition: box-shadow 0.2s;
   border: 1px solid #90caf9;
-  cursor: grab;
+  
 }
 
 .event-row:hover {
@@ -226,4 +226,28 @@ button:disabled {
 
 .add-edit-form button[type="button"]:last-child:hover {
   background: #c62828;
+}
+
+/* Prevent accidental text-selection while clicking/dragging on the app UI */
+.event-list,
+.event-drop-list,
+.event-row,
+h1,
+.add-btn {
+  -webkit-user-select: none; /* Safari */
+  -moz-user-select: none;    /* Firefox */
+  -ms-user-select: none;     /* IE/Edge */
+  user-select: none;         /* Standard */
+  -webkit-touch-callout: none;
+}
+
+/* Keep form controls selectable/editable */
+.add-edit-form input,
+.add-edit-form textarea,
+.add-edit-form select,
+.add-edit-form button {
+  -webkit-user-select: text;
+  -moz-user-select: text;
+  -ms-user-select: text;
+  user-select: text;
 }
